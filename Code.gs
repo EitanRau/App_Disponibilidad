@@ -19,7 +19,7 @@ const SLOT_MINUTES = 30;
 
 // Completá con tu propio mail de Google: solo ese mail va a poder ver el
 // panel de "mis eventos" y cerrar/reabrir eventos.
-const OWNER_EMAIL = 'PEGAR_TU_EMAIL_DE_GOOGLE_AQUI';
+const OWNER_EMAIL = 'eitan.raubvogel@gmail.com';
 
 function doPost(e) {
   return handle_(e, true);
