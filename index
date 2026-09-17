@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Disponibilidad</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #9aa0ab;
+    --accent: #4f8cff;
+    --accent-2: #2e7d32;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 24px 12px 80px;
+  }
+  .wrap { width: 100%; max-width: 720px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 24px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 12px 0 4px; }
+  input[type=text], input[type=date], input[type=time] {
+    width: 100%;
+    padding: 10px 12px;
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 1rem;
+  }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 18px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .link-box {
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    word-break: break-all;
+    margin-top: 8px;
+  }
+  .msg { font-size: 0.9rem; margin-top: 10px; }
+  .msg.error { color: #ff6b6b; }
+  .msg.ok { color: #6bff95; }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+  table.grid th, table.grid td { border: 1px solid var(--border); padding: 0; text-align: center; }
+  table.grid th { background: #1d212b; padding: 6px 2px; font-weight: 500; color: var(--muted); position: sticky; top: 0; }
+  table.grid td:first-child, table.grid th:first-child {
+    position: sticky; left: 0; background: #1d212b; color: var(--muted); padding: 4px 8px; font-weight: 500; z-index: 1;
+  }
+  .grid-wrap { overflow: auto; max-height: 60vh; border: 1px solid var(--border); border-radius: 8px; }
+  .slot-cell {
+    height: 26px; cursor: pointer; user-select: none; touch-action: none;
+  }
+  .slot-cell.selected { background: var(--accent-2); }
+  .gsi-box { margin: 12px 0; }
+  #whoami { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+  .hidden { display: none; }
+  #createGate.locked { display: none; }
