@@ -87,3 +87,603 @@
   #whoami { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
   .hidden { display: none; }
   #createGate.locked { display: none; }
+  .event-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .event-item h3 { margin: 0 0 4px; font-size: 1rem; }
+  .event-item .meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 8px; }
+  .badge {
+    display: inline-block; font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; margin-left: 6px;
+  }
+  .badge.open { background: rgba(46,125,50,0.25); color: #6bff95; }
+  .badge.closed { background: rgba(255,107,107,0.2); color: #ff6b6b; }
+  .event-item button { margin-top: 8px; margin-right: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .event-item button.danger { background: #b3261e; }
+  .event-item button.ok-btn { background: var(--accent-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Disponibilidad</h1>
+  <p class="sub" id="subtitle">Cargando…</p>
+
+  <!-- Vista: crear evento -->
+  <div class="card hidden" id="view-create">
+    <div class="gsi-box" id="gsiBoxCreate"></div>
+    <div id="createGate">
+      <label>Título del evento</label>
+      <input type="text" id="title" placeholder="Ej: Reunión de equipo" />
+
+    <div class="row">
+      <div>
+        <label>Desde</label>
+        <input type="date" id="startDate" />
+      </div>
+      <div>
+        <label>Hasta</label>
+        <input type="date" id="endDate" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Hora desde</label>
+        <input type="time" id="startHour" value="09:00" />
+      </div>
+      <div>
+        <label>Hora hasta</label>
+        <input type="time" id="endHour" value="23:00" />
+      </div>
+    </div>
+
+    <button id="btnCreate">Crear evento</button>
+    <div class="msg" id="createMsg"></div>
+
+    <div id="resultBox" class="hidden">
+      <label>Compartí este link para que la gente marque su disponibilidad:</label>
+      <div class="link-box" id="shareLink"></div>
+      <label>Planilla en Drive:</label>
+      <div class="link-box" id="sheetLink"></div>
+    </div>
+    </div>
+  </div>
+
+  <!-- Vista: responder disponibilidad -->
+  <div class="card hidden" id="view-respond">
+    <div class="gsi-box" id="gsiBox"></div>
+    <div id="whoami"></div>
+
+    <div id="gridSection" class="hidden">
+      <p style="color:var(--muted); font-size:0.85rem;">
+        Tocá los bloques de 30&nbsp;min en los que estás disponible.
+      </p>
+      <div class="grid-wrap">
+        <table class="grid" id="gridTable"></table>
+      </div>
+      <button id="btnSubmit">Guardar disponibilidad</button>
+      <button id="btnDeleteMine" class="secondary">Borrar mi respuesta</button>
+      <div class="msg" id="submitMsg"></div>
+    </div>
+
+    <div id="summarySection" class="hidden">
+      <label>Resumen ahora mismo:</label>
+      <div id="summaryList"></div>
+    </div>
+  </div>
+
+  <!-- Vista: mis eventos (como participante) -->
+  <div class="card hidden" id="view-mine">
+    <div class="gsi-box" id="gsiBoxMine"></div>
+    <div id="mineMsg" class="msg"></div>
+    <div id="mineList"></div>
+  </div>
+
+  <!-- Vista: panel del dueño -->
+  <div class="card hidden" id="view-admin">
+    <div class="gsi-box" id="gsiBoxAdmin"></div>
+    <div id="adminMsg" class="msg"></div>
+    <div id="eventsList"></div>
+  </div>
+
+  <p class="sub" style="margin-top:24px;">
+    <a href="index.html" style="color:var(--accent);">+ Crear un nuevo evento</a>
+    &nbsp;·&nbsp;
+    <a href="index.html?mine=1" style="color:var(--accent);">Mis respuestas</a>
+    &nbsp;·&nbsp;
+    <a href="index.html?admin=1" style="color:var(--accent);">Ver mis eventos</a>
+  </p>
+</div>
+
+<script>
+// =======================================================
+// CONFIGURACIÓN — completar antes de publicar en GitHub Pages
+// =======================================================
+const CONFIG = {
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbzEw0MGrvMeaBwYecm6aRNvx3MRjtJKWD4TLsasfLgPfaYDo4fEvDYI_pHmv3n5TlxZCA/exec',
+  GOOGLE_CLIENT_ID: '143910959743-6g1m14nek8fhue64sh81lndttajg73p1.apps.googleusercontent.com'
+};
+// =======================================================
+
+const params = new URLSearchParams(location.search);
+const eventId = params.get('event');
+const isAdmin = params.get('admin') === '1';
+const isMine = params.get('mine') === '1';
+
+const els = {
+  subtitle: document.getElementById('subtitle'),
+  viewCreate: document.getElementById('view-create'),
+  viewRespond: document.getElementById('view-respond'),
+  viewAdmin: document.getElementById('view-admin'),
+  viewMine: document.getElementById('view-mine'),
+};
+
+if (isAdmin) {
+  initAdminView();
+} else if (isMine) {
+  initMineView();
+} else if (eventId) {
+  initRespondView(eventId);
+} else {
+  initCreateView();
+}
+
+// ---------- Llamadas al backend ----------
+// Content-Type text/plain evita el preflight CORS que Apps Script no soporta.
+async function callApi(payload) {
+  const res = await fetch(CONFIG.WEB_APP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Error desconocido');
+  return json.data;
+}
+
+async function callApiGet(action, extraParams) {
+  const url = new URL(CONFIG.WEB_APP_URL);
+  url.searchParams.set('action', action);
+  Object.entries(extraParams || {}).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString());
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Error desconocido');
+  return json.data;
+}
+
+// ---------- Vista: crear evento ----------
+let creatorUser = null;
+
+function initCreateView() {
+  els.subtitle.textContent = 'Iniciá sesión para crear un evento.';
+  els.viewCreate.classList.remove('hidden');
+  document.getElementById('createGate').classList.add('locked');
+
+  const tryInit = () => {
+    if (!window.google || !google.accounts || !google.accounts.id) {
+      setTimeout(tryInit, 200);
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      callback: onCreateSignIn
+    });
+    google.accounts.id.renderButton(document.getElementById('gsiBoxCreate'), { theme: 'filled_blue', size: 'large' });
+  };
+  tryInit();
+
+  document.getElementById('btnCreate').addEventListener('click', async () => {
+    if (!creatorUser) {
+      const msg = document.getElementById('createMsg');
+      msg.textContent = 'Iniciá sesión con Google primero.';
+      msg.className = 'msg error';
+      return;
+    }
+    const title = document.getElementById('title').value.trim() || 'Disponibilidad';
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const startHour = document.getElementById('startHour').value;
+    const endHour = document.getElementById('endHour').value;
+    const msg = document.getElementById('createMsg');
+
+    if (!startDate || !endDate) {
+      msg.textContent = 'Elegí el rango de fechas.';
+      msg.className = 'msg error';
+      return;
+    }
+    msg.textContent = 'Creando planilla en Drive…';
+    msg.className = 'msg';
+    const btn = document.getElementById('btnCreate');
+    btn.disabled = true;
+
+    try {
+      const data = await callApi({ action: 'createEvent', title, startDate, endDate, startHour, endHour, email: creatorUser.email });
+      msg.textContent = '¡Listo!';
+      msg.className = 'msg ok';
+      const shareUrl = location.origin + location.pathname + '?event=' + data.sheetId;
+      document.getElementById('shareLink').textContent = shareUrl;
+      document.getElementById('sheetLink').innerHTML = '<a href="' + data.url + '" target="_blank" style="color:var(--accent)">' + data.url + '</a>';
+      document.getElementById('resultBox').classList.remove('hidden');
+    } catch (err) {
+      msg.textContent = 'Error: ' + err.message;
+      msg.className = 'msg error';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function onCreateSignIn(response) {
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  creatorUser = { name: payload.name, email: payload.email };
+  document.getElementById('createGate').classList.remove('locked');
+  els.subtitle.textContent = 'Creá un evento y compartí el link para juntar disponibilidad.';
+}
+
+// ---------- Vista: responder disponibilidad ----------
+let currentEvent = null;
+let currentUser = null;
+const selectedSlots = new Set();
+
+async function initRespondView(sheetId) {
+  els.viewRespond.classList.remove('hidden');
+  els.subtitle.textContent = 'Cargando evento…';
+
+  try {
+    currentEvent = await callApiGet('getEvent', { sheetId });
+  } catch (err) {
+    els.subtitle.textContent = 'No se pudo cargar el evento: ' + err.message;
+    return;
+  }
+
+  if (currentEvent.closed) {
+    els.subtitle.textContent = currentEvent.title + ' — este evento ya cerró';
+    document.getElementById('gsiBox').innerHTML = '<div class="msg error">Este evento ya no acepta respuestas.</div>';
+    return;
+  }
+
+  els.subtitle.textContent = currentEvent.title + ' — marcá cuándo podés';
+  renderGrid(currentEvent);
+  setupGoogleSignIn();
+  loadSummary();
+}
+
+async function loadSummary() {
+  try {
+    const summary = await callApiGet('getSummary', { sheetId: currentEvent.sheetId });
+    renderSummary(summary);
+  } catch (err) {
+    // Si falla, simplemente no se muestra el resumen.
+  }
+}
+
+function renderSummary(summary) {
+  const section = document.getElementById('summarySection');
+  const list = document.getElementById('summaryList');
+  if (!summary.totalPeople) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+  list.innerHTML = '';
+  summary.top.slice(0, 5).forEach(x => {
+    const d = new Date(x.day + 'T00:00:00');
+    const dayLabel = d.toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    const row = document.createElement('div');
+    row.className = 'event-item';
+    row.innerHTML = `<strong>${dayLabel} ${x.slot}</strong> — ${x.count}/${summary.totalPeople} pueden<br/>
+      <span style="color:var(--muted); font-size:0.8rem;">${x.names}</span>`;
+    list.appendChild(row);
+  });
+}
+
+function setupGoogleSignIn() {
+  window.onload = window.onload || function () {};
+  const tryInit = () => {
+    if (!window.google || !google.accounts || !google.accounts.id) {
+      setTimeout(tryInit, 200);
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      callback: onGoogleSignIn
+    });
+    google.accounts.id.renderButton(document.getElementById('gsiBox'), { theme: 'filled_blue', size: 'large' });
+  };
+  tryInit();
+}
+
+async function onGoogleSignIn(response) {
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  currentUser = { name: payload.name, email: payload.email };
+  const whoami = document.getElementById('whoami');
+  whoami.textContent = 'Ingresaste como ' + currentUser.name + ' (' + currentUser.email + ') — cargando tu disponibilidad…';
+  document.getElementById('gridSection').classList.remove('hidden');
+
+  try {
+    const existing = await callApiGet('getAvailability', { sheetId: currentEvent.sheetId, email: currentUser.email });
+    selectedSlots.clear();
+    existing.slots.forEach(key => {
+      selectedSlots.add(key);
+      const td = document.querySelector('.slot-cell[data-key="' + CSS.escape(key) + '"]');
+      if (td) td.classList.add('selected');
+    });
+    whoami.textContent = existing.slots.length
+      ? 'Ingresaste como ' + currentUser.name + ' — ya tenías ' + existing.slots.length + ' bloque(s) guardados, podés modificarlos.'
+      : 'Ingresaste como ' + currentUser.name + ' (' + currentUser.email + ')';
+  } catch (err) {
+    whoami.textContent = 'Ingresaste como ' + currentUser.name + ' (' + currentUser.email + ')';
+  }
+}
+
+function renderGrid(ev) {
+  const table = document.getElementById('gridTable');
+  table.innerHTML = '';
+
+  const thead = document.createElement('tr');
+  thead.appendChild(document.createElement('th'));
+  ev.days.forEach(day => {
+    const th = document.createElement('th');
+    const d = new Date(day + 'T00:00:00');
+    th.textContent = d.toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    thead.appendChild(th);
+  });
+  table.appendChild(thead);
+
+  ev.slots.forEach(slot => {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.textContent = slot;
+    th.style.background = '#1d212b';
+    tr.appendChild(th);
+
+    ev.days.forEach(day => {
+      const td = document.createElement('td');
+      const key = day + ' ' + slot;
+      td.className = 'slot-cell';
+      td.dataset.key = key;
+      td.addEventListener('mousedown', (e) => { e.preventDefault(); startDrag(td, key); });
+      td.addEventListener('mouseenter', () => { if (isDragging) paintSlot(td, key, paintValue); });
+      td.addEventListener('touchstart', (e) => { e.preventDefault(); startDrag(td, key); }, { passive: false });
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+}
+
+let isDragging = false;
+let paintValue = null;
+
+document.addEventListener('mouseup', () => { isDragging = false; });
+document.addEventListener('touchend', () => { isDragging = false; });
+document.addEventListener('touchcancel', () => { isDragging = false; });
+document.addEventListener('touchmove', (e) => {
+  if (!isDragging) return;
+  const touch = e.touches[0];
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  if (el && el.classList.contains('slot-cell')) {
+    paintSlot(el, el.dataset.key, paintValue);
+  }
+  e.preventDefault();
+}, { passive: false });
+
+function startDrag(td, key) {
+  isDragging = true;
+  paintValue = !selectedSlots.has(key);
+  paintSlot(td, key, paintValue);
+}
+
+function paintSlot(td, key, value) {
+  if (value) {
+    selectedSlots.add(key);
+    td.classList.add('selected');
+  } else {
+    selectedSlots.delete(key);
+    td.classList.remove('selected');
+  }
+}
+
+document.getElementById('btnSubmit')?.addEventListener('click', async () => {
+  const msg = document.getElementById('submitMsg');
+  if (!currentUser) {
+    msg.textContent = 'Iniciá sesión con Google primero.';
+    msg.className = 'msg error';
+    return;
+  }
+  msg.textContent = 'Guardando…';
+  msg.className = 'msg';
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  try {
+    await callApi({
+      action: 'submitAvailability',
+      sheetId: currentEvent.sheetId,
+      name: currentUser.name,
+      email: currentUser.email,
+      slots: Array.from(selectedSlots)
+    });
+    msg.textContent = '¡Guardado! Ya se actualizó el resumen.';
+    msg.className = 'msg ok';
+    loadSummary();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'msg error';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btnDeleteMine')?.addEventListener('click', async () => {
+  const msg = document.getElementById('submitMsg');
+  if (!currentUser) {
+    msg.textContent = 'Iniciá sesión con Google primero.';
+    msg.className = 'msg error';
+    return;
+  }
+  if (!confirm('¿Seguro que querés borrar tu respuesta completa?')) return;
+  msg.textContent = 'Borrando…';
+  msg.className = 'msg';
+  const btn = document.getElementById('btnDeleteMine');
+  btn.disabled = true;
+  try {
+    await callApi({ action: 'deleteMyAvailability', sheetId: currentEvent.sheetId, email: currentUser.email });
+    selectedSlots.clear();
+    document.querySelectorAll('.slot-cell.selected').forEach(td => td.classList.remove('selected'));
+    msg.textContent = 'Tu respuesta fue borrada.';
+    msg.className = 'msg ok';
+    loadSummary();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'msg error';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- Vista: panel del dueño (mis eventos) ----------
+let adminUser = null;
+
+function initAdminView() {
+  els.viewAdmin.classList.remove('hidden');
+  els.subtitle.textContent = 'Iniciá sesión con tu cuenta para ver tus eventos.';
+
+  const tryInit = () => {
+    if (!window.google || !google.accounts || !google.accounts.id) {
+      setTimeout(tryInit, 200);
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      callback: onAdminSignIn
+    });
+    google.accounts.id.renderButton(document.getElementById('gsiBoxAdmin'), { theme: 'filled_blue', size: 'large' });
+  };
+  tryInit();
+}
+
+async function onAdminSignIn(response) {
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  adminUser = { name: payload.name, email: payload.email };
+  const msg = document.getElementById('adminMsg');
+  msg.textContent = 'Cargando tus eventos…';
+  msg.className = 'msg';
+
+  try {
+    const data = await callApiGet('listEvents', { email: adminUser.email });
+    msg.textContent = '';
+    renderEventsList(data.events);
+  } catch (err) {
+    msg.textContent = 'No autorizado: esta cuenta no puede ver este panel.';
+    msg.className = 'msg error';
+    document.getElementById('eventsList').innerHTML = '';
+  }
+}
+
+function renderEventsList(events) {
+  const list = document.getElementById('eventsList');
+  list.innerHTML = '';
+  if (!events.length) {
+    list.innerHTML = '<p class="sub">Todavía no creaste ningún evento.</p>';
+    return;
+  }
+  events.forEach(ev => {
+    const shareUrl = location.origin + location.pathname + '?event=' + ev.sheetId;
+    const item = document.createElement('div');
+    item.className = 'event-item';
+    item.innerHTML = `
+      <h3>${ev.title} <span class="badge ${ev.closed ? 'closed' : 'open'}">${ev.closed ? 'Cerrado' : 'Abierto'}</span></h3>
+      <div class="meta">${ev.startDate} → ${ev.endDate}</div>
+      <div class="link-box">${shareUrl}</div>
+      <a href="${ev.url}" target="_blank" style="color:var(--accent); font-size:0.85rem;">Abrir planilla en Drive ↗</a><br/>
+      <button class="toggle-btn ${ev.closed ? 'ok-btn' : 'danger'}">${ev.closed ? 'Reabrir evento' : 'Cerrar evento'}</button>
+      <button class="delete-btn danger">Eliminar evento</button>
+    `;
+    item.querySelector('.delete-btn').addEventListener('click', async (e) => {
+      if (!confirm('¿Seguro que querés eliminar "' + ev.title + '"? Esto manda la planilla a la papelera de tu Drive.')) return;
+      e.target.disabled = true;
+      try {
+        await callApi({ action: 'deleteEvent', sheetId: ev.sheetId, email: adminUser.email });
+        const data = await callApiGet('listEvents', { email: adminUser.email });
+        renderEventsList(data.events);
+      } catch (err) {
+        alert('Error: ' + err.message);
+        e.target.disabled = false;
+      }
+    });
+    item.querySelector('.toggle-btn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        await callApi({ action: 'setEventClosed', sheetId: ev.sheetId, email: adminUser.email, closed: !ev.closed });
+        const data = await callApiGet('listEvents', { email: adminUser.email });
+        renderEventsList(data.events);
+      } catch (err) {
+        alert('Error: ' + err.message);
+        e.target.disabled = false;
+      }
+    });
+    list.appendChild(item);
+  });
+}
+
+// ---------- Vista: mis respuestas (como participante) ----------
+let mineUser = null;
+
+function initMineView() {
+  els.viewMine.classList.remove('hidden');
+  els.subtitle.textContent = 'Iniciá sesión para ver los eventos en los que respondiste.';
+
+  const tryInit = () => {
+    if (!window.google || !google.accounts || !google.accounts.id) {
+      setTimeout(tryInit, 200);
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      callback: onMineSignIn
+    });
+    google.accounts.id.renderButton(document.getElementById('gsiBoxMine'), { theme: 'filled_blue', size: 'large' });
+  };
+  tryInit();
+}
+
+async function onMineSignIn(response) {
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  mineUser = { name: payload.name, email: payload.email };
+  const msg = document.getElementById('mineMsg');
+  msg.textContent = 'Buscando tus eventos…';
+  msg.className = 'msg';
+
+  try {
+    const data = await callApiGet('listMyEvents', { email: mineUser.email });
+    msg.textContent = '';
+    renderMineList(data.events);
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'msg error';
+  }
+}
+
+function renderMineList(events) {
+  const list = document.getElementById('mineList');
+  list.innerHTML = '';
+  if (!events.length) {
+    list.innerHTML = '<p class="sub">Todavía no respondiste ningún evento.</p>';
+    return;
+  }
+  events.forEach(ev => {
+    const link = location.origin + location.pathname + '?event=' + ev.sheetId;
+    const item = document.createElement('div');
+    item.className = 'event-item';
+    item.innerHTML = `
+      <h3>${ev.title} <span class="badge ${ev.closed ? 'closed' : 'open'}">${ev.closed ? 'Cerrado' : 'Abierto'}</span></h3>
+      <div class="meta">${ev.startDate} → ${ev.endDate} · marcaste ${ev.mySlotsCount} bloque(s)</div>
+      <a href="${link}" style="color:var(--accent); font-size:0.85rem;">Ver / editar mi disponibilidad ↗</a>
+    `;
+    list.appendChild(item);
+  });
+}
+</script>
+</body>
+</html>
