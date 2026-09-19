@@ -148,6 +148,11 @@
       <label>Planilla en Drive:</label>
       <div class="link-box" id="sheetLink"></div>
     </div>
+
+    <div id="ownerEventsWrap" class="hidden" style="margin-top:24px;">
+      <label>Tus eventos:</label>
+      <div id="ownerEventsList"></div>
+    </div>
     </div>
   </div>
 
@@ -181,19 +186,10 @@
     <div id="mineList"></div>
   </div>
 
-  <!-- Vista: panel del dueño -->
-  <div class="card hidden" id="view-admin">
-    <div class="gsi-box" id="gsiBoxAdmin"></div>
-    <div id="adminMsg" class="msg"></div>
-    <div id="eventsList"></div>
-  </div>
-
   <p class="sub" style="margin-top:24px;">
-    <a href="index.html" style="color:var(--accent);">+ Crear un nuevo evento</a>
+    <a href="index.html" style="color:var(--accent);">Crear / gestionar mis eventos</a>
     &nbsp;·&nbsp;
     <a href="index.html?mine=1" style="color:var(--accent);">Mis respuestas</a>
-    &nbsp;·&nbsp;
-    <a href="index.html?admin=1" style="color:var(--accent);">Ver mis eventos</a>
   </p>
 </div>
 
@@ -202,8 +198,8 @@
 // CONFIGURACIÓN — completar antes de publicar en GitHub Pages
 // =======================================================
 const CONFIG = {
-  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbzEw0MGrvMeaBwYecm6aRNvx3MRjtJKWD4TLsasfLgPfaYDo4fEvDYI_pHmv3n5TlxZCA/exec',
-  GOOGLE_CLIENT_ID: '143910959743-6g1m14nek8fhue64sh81lndttajg73p1.apps.googleusercontent.com'
+  WEB_APP_URL: 'PEGAR_ACA_LA_URL_DE_TU_APPS_SCRIPT',
+  GOOGLE_CLIENT_ID: 'PEGAR_ACA_TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com'
 };
 // =======================================================
 
@@ -216,17 +212,16 @@ const els = {
   subtitle: document.getElementById('subtitle'),
   viewCreate: document.getElementById('view-create'),
   viewRespond: document.getElementById('view-respond'),
-  viewAdmin: document.getElementById('view-admin'),
   viewMine: document.getElementById('view-mine'),
 };
 
-if (isAdmin) {
-  initAdminView();
-} else if (isMine) {
+if (isMine) {
   initMineView();
 } else if (eventId) {
   initRespondView(eventId);
 } else {
+  // "?admin=1" queda como alias por compatibilidad con links viejos:
+  // ahora crear y gestionar eventos vive todo en la misma pantalla.
   initCreateView();
 }
 
@@ -306,8 +301,9 @@ function initCreateView() {
       document.getElementById('shareLink').textContent = shareUrl;
       document.getElementById('sheetLink').innerHTML = '<a href="' + data.url + '" target="_blank" style="color:var(--accent)">' + data.url + '</a>';
       document.getElementById('resultBox').classList.remove('hidden');
+      loadOwnerEvents();
     } catch (err) {
-      msg.textContent = 'Error: ' + err.message;
+      msg.textContent = 'Error: ' + err.message + ' (logueado como: ' + creatorUser.email + ')';
       msg.className = 'msg error';
     } finally {
       btn.disabled = false;
@@ -319,7 +315,8 @@ function onCreateSignIn(response) {
   const payload = JSON.parse(atob(response.credential.split('.')[1]));
   creatorUser = { name: payload.name, email: payload.email };
   document.getElementById('createGate').classList.remove('locked');
-  els.subtitle.textContent = 'Creá un evento y compartí el link para juntar disponibilidad.';
+  els.subtitle.textContent = 'Ingresaste como ' + creatorUser.email + ' — creá un evento o gestioná los que ya tenés.';
+  loadOwnerEvents();
 }
 
 // ---------- Vista: responder disponibilidad ----------
@@ -543,46 +540,22 @@ document.getElementById('btnDeleteMine')?.addEventListener('click', async () => 
 });
 
 // ---------- Vista: panel del dueño (mis eventos) ----------
-let adminUser = null;
+// Fusionado con la vista de crear evento: mismo login, misma pantalla.
 
-function initAdminView() {
-  els.viewAdmin.classList.remove('hidden');
-  els.subtitle.textContent = 'Iniciá sesión con tu cuenta para ver tus eventos.';
-
-  const tryInit = () => {
-    if (!window.google || !google.accounts || !google.accounts.id) {
-      setTimeout(tryInit, 200);
-      return;
-    }
-    google.accounts.id.initialize({
-      client_id: CONFIG.GOOGLE_CLIENT_ID,
-      callback: onAdminSignIn
-    });
-    google.accounts.id.renderButton(document.getElementById('gsiBoxAdmin'), { theme: 'filled_blue', size: 'large' });
-  };
-  tryInit();
-}
-
-async function onAdminSignIn(response) {
-  const payload = JSON.parse(atob(response.credential.split('.')[1]));
-  adminUser = { name: payload.name, email: payload.email };
-  const msg = document.getElementById('adminMsg');
-  msg.textContent = 'Cargando tus eventos…';
-  msg.className = 'msg';
-
+async function loadOwnerEvents() {
+  const wrap = document.getElementById('ownerEventsWrap');
+  wrap.classList.remove('hidden');
   try {
-    const data = await callApiGet('listEvents', { email: adminUser.email });
-    msg.textContent = '';
+    const data = await callApiGet('listEvents', { email: creatorUser.email });
     renderEventsList(data.events);
   } catch (err) {
-    msg.textContent = 'No autorizado: esta cuenta no puede ver este panel.';
-    msg.className = 'msg error';
-    document.getElementById('eventsList').innerHTML = '';
+    document.getElementById('ownerEventsList').innerHTML =
+      '<p class="msg error">No se pudieron cargar tus eventos: ' + err.message + '</p>';
   }
 }
 
 function renderEventsList(events) {
-  const list = document.getElementById('eventsList');
+  const list = document.getElementById('ownerEventsList');
   list.innerHTML = '';
   if (!events.length) {
     list.innerHTML = '<p class="sub">Todavía no creaste ningún evento.</p>';
@@ -604,9 +577,8 @@ function renderEventsList(events) {
       if (!confirm('¿Seguro que querés eliminar "' + ev.title + '"? Esto manda la planilla a la papelera de tu Drive.')) return;
       e.target.disabled = true;
       try {
-        await callApi({ action: 'deleteEvent', sheetId: ev.sheetId, email: adminUser.email });
-        const data = await callApiGet('listEvents', { email: adminUser.email });
-        renderEventsList(data.events);
+        await callApi({ action: 'deleteEvent', sheetId: ev.sheetId, email: creatorUser.email });
+        loadOwnerEvents();
       } catch (err) {
         alert('Error: ' + err.message);
         e.target.disabled = false;
@@ -615,9 +587,8 @@ function renderEventsList(events) {
     item.querySelector('.toggle-btn').addEventListener('click', async (e) => {
       e.target.disabled = true;
       try {
-        await callApi({ action: 'setEventClosed', sheetId: ev.sheetId, email: adminUser.email, closed: !ev.closed });
-        const data = await callApiGet('listEvents', { email: adminUser.email });
-        renderEventsList(data.events);
+        await callApi({ action: 'setEventClosed', sheetId: ev.sheetId, email: creatorUser.email, closed: !ev.closed });
+        loadOwnerEvents();
       } catch (err) {
         alert('Error: ' + err.message);
         e.target.disabled = false;
