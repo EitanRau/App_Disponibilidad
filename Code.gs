@@ -70,6 +70,9 @@ function handle_(e, isPost) {
       case 'listMyEvents':
         data = listMyEvents_(params.email);
         break;
+      case 'debugOwner':
+        data = { ownerEmailEnCodigo: OWNER_EMAIL };
+        break;
       default:
         throw new Error('Acción desconocida: ' + action);
     }
